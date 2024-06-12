@@ -1,0 +1,145 @@
+import mysql.connector
+import time
+from itertools import combinations
+
+def bad_char_heuristic(pattern):
+    """
+    Generate the bad character heuristic table.
+    """
+    bad_char = [-1] * 256  # Initialize the table with -1
+    
+    for i in range(len(pattern)):
+        bad_char[ord(pattern[i])] = i  # Fill the table with the last occurrence of each character in the pattern
+    
+    return bad_char
+
+def boyer_moore_search(text, pattern):
+    """
+    Search for the pattern in the text using the Boyer-Moore algorithm.
+    """
+    m = len(pattern)
+    n = len(text)
+    
+    bad_char = bad_char_heuristic(pattern)
+    
+    s = 0  # s is the shift of the pattern with respect to the text
+    while s <= n - m:
+        j = m - 1
+        
+        while j >= 0 and pattern[j] == text[s + j]:
+            j -= 1
+        
+        if j < 0:
+            return True  # Pattern found at index s
+            s += (m - bad_char[ord(text[s + m])] if s + m < n else 1)
+        else:
+            s += max(1, j - bad_char[ord(text[s + j])])
+    
+    return False
+
+def tokenize(text):
+    """
+    Tokenize the input text into words.
+    """
+    return text.split()
+
+def generate_combinations(words, length):
+    """
+    Generate all possible combinations of a given length from the list of words.
+    """
+    return list(combinations(words, length))
+
+def count_matching_words_boyer_moore(text, patterns):
+    """
+    Count how many words from the input are found in the combination using Boyer-Moore.
+    """
+    count = 0
+    for pattern in patterns:
+        if(boyer_moore_search(text, pattern)):
+            count += 1
+
+    return count
+
+def filterWords(input_words, gender):
+    """
+    Search for the best three-word name combinations from the database meanings.
+    """
+    # Connect to the MySQL database
+    cnx = mysql.connector.connect(user='root', password='root',
+                                  host='localhost', database='names')
+    cursor = cnx.cursor()
+    
+    # Execute the query to fetch names and meanings
+    if(gender == "m"):
+        query = "SELECT name, meaning FROM names WHERE gender = 'Boy'"
+    elif(gender == "f"):
+        query = "SELECT name, meaning FROM names WHERE gender = 'Girl'"
+    elif(gender == "u"):
+        query = "SELECT name, meaning FROM names WHERE gender = 'Unisex'"
+
+    cursor.execute(query)
+    
+    results = []
+    max_matches = 0
+    for (name, meaning) in cursor:
+        if meaning:
+            matches = count_matching_words_boyer_moore(meaning.lower(), input_words)
+            if(matches > max_matches):
+                max_matches = matches
+                results = []
+                results.append((name, meaning))
+            elif(matches == max_matches):
+                results.append((name, meaning))
+    
+    cursor.close()
+    cnx.close()
+    
+    return results
+
+def generateFullNames(input_words, gender):
+    """
+    Generate full names that fit most of the meanings defined
+    """
+    best_combinations = filterWords(input_words, gender)
+
+    if(len(best_combinations) >= 3):
+        full_names = generate_combinations(best_combinations, 3)
+        maxMatchedMeaning = 0
+        pickedNames = []
+        for fullName in full_names:
+            allMeaning = ""
+            allName = ""
+            for name in fullName:
+                allName += name[0] + " "
+                allMeaning += name[1] + "; "
+
+            matchedMeaning = count_matching_words_boyer_moore(allMeaning.lower(), input_words)
+            if(matchedMeaning > maxMatchedMeaning):
+                maxMatchedMeaning = matchedMeaning
+                pickedNames = []
+                pickedNames.append((allName.strip(), allMeaning.strip(), matchedMeaning))
+            elif(matchedMeaning == maxMatchedMeaning):
+                pickedNames.append((allName.strip(), allMeaning.strip(), matchedMeaning))
+
+
+        for res in pickedNames:
+            print(f"Name: {res[0]}\nMeaning: {res[1]}")
+    else:
+        print("")
+        for combination in best_combinations:
+            print(f"Name: {combination[0]}\nMeaning: {combination[1]}\n")
+
+if __name__ == "__main__":
+    print("===================================================")
+    print("                 NAME GENERATOR                    ")
+    print("===================================================")
+    gender = input("Gender: Male(M) / Female(F) / Unisex(U) ")
+    input_meaning = input("Meanings: ")
+    # input_meaning = "Strength Love Hope Beauty Wisdom"
+    input_words = tokenize(input_meaning.lower())
+
+    print("Generating names...")
+    time.sleep(1)
+
+    generateFullNames(input_words, gender.lower())
+    
